@@ -1,2 +1,2 @@
 # Jiaqing-Ge
-Jiaqing Ge's repo
+This is my repo of the practicum work. 
