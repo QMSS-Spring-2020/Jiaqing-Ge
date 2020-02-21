@@ -147,6 +147,18 @@ p_1 <- complaints_test %>%
 ggplotly(p_1,width = 1500, height = 500, type = 'bar')
 ```
 
+```{r,height = 5, fig.width = 10}
+share_of_products_ <- complaints_test %>%
+  group_by(Product) %>%
+  summarize(count = n()) %>%
+  plot_ly(labels = ~Product, values = ~count,width = 1200, height = 500) %>%
+  add_pie(hole = 0.6) %>%
+  layout(title = "Share of Products",  showlegend = T,
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),legend = list(x = 100, y = 0.5))
+share_of_products_
+```
+
 ### Ploting products with highest number of complaints
 ```{r,fig.height = 5, fig.width = 10}
 Top_10_product <- complaints_test %>%
@@ -336,7 +348,7 @@ complaints_narrative_corp_2 <- complaints_narrative_corp_2 %>%
 ```{r,fig.height = 10, fig.width = 10}
 p_5 <- complaints_narrative_corp_2 %>%
   arrange(desc(tf_idf)) %>%
-  mutate(bigrams = factor(bigrams, levels = rev(unique(bigrams)))) %>% 
+  mutate(bigrams = factor(bigrams, levels = rev(unique(bigrams)))) %>%
   group_by(Company.response.to.consumer) %>% 
   top_n(10) %>% 
   ungroup() %>%
