@@ -48,7 +48,7 @@ subset <- complaints_raw[sample(nrow(complaints_raw), size = 5000, replace = FAL
 saveRDS(subset, file = "complaints_sub.rds")
 ```
 
-# 4. Randomly draw 5000 rows of data to do the analysis and take a look at it.
+# 4. take a look at it.
 ```{r}
 complaints_test <- readRDS('complaints_sub.rds')
 head(complaints_test,100) %>%
@@ -293,3 +293,73 @@ wordcloud(words = complaints_narrative_corp$word, freq = complaints_narrative_co
     colors=brewer.pal(8, "Dark2"))
 ```
 
+## repeat all of that using bigram
+```{r}
+complaints_narrative_corp_2 <- complaints_test %>%
+  select(Company.response.to.consumer,Consumer.complaint.narrative)%>%
+  filter(!is.na(Consumer.complaint.narrative))%>%
+  filter(Consumer.complaint.narrative != '')%>%
+  group_by(Company.response.to.consumer)%>%
+  summarise(narrative = paste0(Consumer.complaint.narrative,collapse = " "))%>%
+  ungroup()%>%
+  unnest_tokens(word, narrative)%>%
+  filter(word %in% stopwords("english") == FALSE)%>%
+  filter(word %in% c("xxxx", "xxxxxxxx", "xx") == FALSE)%>%
+  mutate(word = tolower(word))%>%
+  filter(str_detect(word, "^[0-9]")==FALSE)%>%
+  filter(str_detect(word,'[[:punct:] ]+')==FALSE)%>%
+  filter(str_detect(word,' ')==FALSE)%>%
+  group_by(Company.response.to.consumer)%>%
+  summarise(narrative = paste0(word,collapse = " "))%>%
+  unnest_tokens(bigrams, narrative, token = "ngrams", n = 2)%>%
+  count(Company.response.to.consumer,bigrams, sort = TRUE)
+```
+
+```{r, message=F}
+total_words_2 <- complaints_narrative_corp_2 %>% 
+  group_by(Company.response.to.consumer) %>%
+  summarize(total = sum(n))
+complaints_narrative_corp_2 <- left_join(complaints_narrative_corp_2, total_words_2)
+```
+
+```{r}
+complaints_narrative_corp_2 <- complaints_narrative_corp_2 %>%
+  bind_tf_idf(bigrams, Company.response.to.consumer, n)
+```
+
+```{r}
+complaints_narrative_corp_2 <- complaints_narrative_corp_2 %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+```
+
+```{r,fig.height = 10, fig.width = 10}
+p_5 <- complaints_narrative_corp_2 %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(bigrams = factor(bigrams, levels = rev(unique(bigrams)))) %>% 
+  group_by(Company.response.to.consumer) %>% 
+  top_n(10) %>% 
+  ungroup() %>%
+  ggplot(aes(bigrams, tf_idf, fill = Company.response.to.consumer)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~Company.response.to.consumer, ncol = 2, scales = "free") +
+  coord_flip()
+ggplotly(p_5,width = 1000, height = 1000, type = 'bar')
+```
+
+## word cloud with tf_idf
+```{r,warning=FALSE}
+complaints_narrative_corp_2 <- complaints_narrative_corp_2 %>%
+    filter(Company.response.to.consumer == 'Closed with monetary relief')
+wordcloud(words = complaints_narrative_corp_2$bigrams, freq = complaints_narrative_corp_2$tf_idf,
+    max.words=200, random.order=FALSE, rot.per=0.35, 
+    colors=brewer.pal(8, "Dark2"))
+```
+
+## word cloud with frequency of words
+```{r,warning=FALSE}
+wordcloud(words = complaints_narrative_corp_2$bigrams, freq = complaints_narrative_corp_2$n,
+    max.words=200, random.order=FALSE, rot.per=0.35, 
+    colors=brewer.pal(8, "Dark2"))
+```
