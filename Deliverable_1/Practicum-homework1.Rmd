@@ -1,0 +1,386 @@
+---
+title: "Practicum"
+author: "Jiaqing Ge"
+date: "2/19/2020"
+output:
+  html_document: 
+      keep_md: true
+      always_allow_html: true
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Packages needed
+```{r, message=FALSE,warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(wordcloud)
+library(plotly)
+library(ggthemes)
+library(gapminder)
+library(scales)
+library(usmap)
+library(tidycensus)
+library(lubridate)
+library(TTR)
+library(tm)
+library(SnowballC)
+library(RColorBrewer)
+library(tidytext)
+library(stringr)
+```
+
+# 2. Import data
+```
+complaints <- read.csv('complaints.csv',stringsAsFactors = FALSE)
+saveRDS(complaints, file = "complaints_raw.rds") # This line change complaints.csv to dataset that works with R. 
+complaints_raw <- readRDS("complaints_raw.rds")
+```
+
+# 3. Randomly draw 5000 rows of data to do the analysis.
+```
+subset <- complaints_raw[sample(nrow(complaints_raw), size = 5000, replace = FALSE),]
+saveRDS(subset, file = "complaints_sub.rds")
+```
+
+# 4. take a look at it.
+```{r}
+complaints_test <- readRDS('complaints_sub.rds')
+head(complaints_test,100) %>%
+  View()
+glimpse(complaints_test)
+```
+
+# 5. Change date received to year-month-day
+```{r}
+complaints_test <- complaints_test %>%
+  mutate(year = as.integer(substr(Date.received, start = 1, stop = 4))) %>%
+  mutate(month = as.integer(substr(Date.received, start = 6, stop = 7))) %>%
+  mutate(day = as.integer(substr(Date.received, start =9 , stop = 10)))
+complaints_test$Date.received <- ymd(complaints_test$Date.received)
+str(complaints_test)
+```
+
+# 6. Ploting of the number of complaints throughout the year
+### Ploting overall number of complaints throughout the year
+```{r,warning=FALSE, message=FALSE}
+p <- complaints_test %>% 
+  mutate(date = as.POSIXct(paste(month , day , sep = "." )  , format = "%m.%d" )) %>%
+  group_by(date) %>%
+  summarise(number_of_complaints = n()) %>%
+  ggplot(aes(x = date, y = number_of_complaints))+ geom_point()+ylab("Number of complaints")+
+  theme_economist()+
+  scale_x_datetime(labels=  date_format("%b-%d"),date_breaks = '1 month')+
+  geom_smooth(lwd=1, se=FALSE,color = 'red')+
+  geom_line(aes(x=date, y=SMA(number_of_complaints,10), color = 'red'))+ 
+  theme(legend.position="none")+
+  ggtitle("Overall number of complaints throughout a year")
+ggplotly(p)
+```
+
+In this graph, I plot a graph showing the number of complaints through out a year to see whether there are more complaints in certain months or day. We can see from the graph that there are a few outliars that are very low appears at the beginning of the month. On Jan-01, Mar-01, Jul-01 and Sep-01, the number of complaints drops significantly. 
+
+### Ploting number of complaints of certain complany through out the year through out the year
+```{r,warning=FALSE, message=FALSE}
+simpleCap <- function(x) {
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), substring(s, 2),
+      sep="", collapse=" ")
+} # This line change the format of company names
+complaints_pattern_company <- function(x){ 
+p_ <-  complaints_test %>% 
+  filter(Company == x)  %>%
+  mutate(date = as.POSIXct(paste(month , day , sep = "." )  , format = "%m.%d" )) %>%
+  group_by(date) %>%
+  summarise(number_of_complaints = n()) %>%
+  ggplot(aes(x = date, y = number_of_complaints))+ geom_point()+ylab("Number of complaints")+
+  theme_economist()+
+  scale_x_datetime(labels=  date_format("%b-%d"),date_breaks = '1 month')+
+  geom_smooth(lwd=1, se=FALSE,color = 'red')+
+  geom_line(aes(x=date, y=SMA(number_of_complaints,10), color = 'red'))+ 
+  theme(legend.position="none")+
+  ggtitle(paste("Number of Complaints throughout a Year:",simpleCap(tolower(x)), sep = ' '))
+ggplotly(p_)}
+complaints_pattern_company('BANK OF AMERICA, NATIONAL ASSOCIATION')
+```
+
+### Ploting number of complaints of certain product through out the year through out the year
+```{r, message=F}
+complaints_pattern_product <- function(x){ 
+p_ <-  complaints_test %>% 
+  filter(Product == x)  %>%
+  mutate(date = as.POSIXct(paste(month , day , sep = "." )  , format = "%m.%d" )) %>%
+  group_by(date) %>%
+  summarise(number_of_complaints = n()) %>%
+  ggplot(aes(x = date, y = number_of_complaints))+ geom_point()+ylab("Number of complaints")+
+  theme_economist()+
+  scale_x_datetime(labels=  date_format("%b-%d"),date_breaks = '1 month')+
+  geom_smooth(lwd=1, se=FALSE,color = 'red')+
+  geom_line(aes(x=date, y=SMA(number_of_complaints,10), color = 'red'))+ 
+  theme(legend.position="none")+
+  ggtitle(paste("Number of Complaints throughout a Year:",simpleCap(tolower(x)), sep = ' '))
+ggplotly(p_)}
+complaints_pattern_product('Debt collection')
+```
+
+### Ploting companies with highest number of complaints
+```{r,fig.height = 5, fig.width = 15}
+Top_10_comanies <- complaints_test %>%
+  group_by(Company) %>%
+  summarise(number_of_complaints = n())%>%
+  arrange(desc(number_of_complaints))%>%
+  head(10)%>%
+  select(Company) # This line select the companies with most complaints
+p_1 <- complaints_test %>%
+  filter(Company %in% Top_10_comanies$Company) %>%
+  group_by(Company,Product)%>%
+  summarise(number_of_complaints = n())%>%
+  ungroup()%>%
+  mutate(Company = factor(Company, levels=Top_10_comanies$Company))%>%
+  ggplot(aes(fill=Product, y=number_of_complaints, x=Company)) + 
+  geom_bar(position="stack", stat="identity")+ylab('Nunber of Complaints by Company')+coord_flip()+theme(legend.position="right")+guides(fill=guide_legend(nrow=15))
+ggplotly(p_1,width = 1500, height = 500, type = 'bar')
+```
+
+```{r,height = 5, fig.width = 10}
+share_of_products_ <- complaints_test %>%
+  group_by(Product) %>%
+  summarize(count = n()) %>%
+  plot_ly(labels = ~Product, values = ~count,width = 1200, height = 500) %>%
+  add_pie(hole = 0.6) %>%
+  layout(title = "Share of Products",  showlegend = T,
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),legend = list(x = 100, y = 0.5))
+share_of_products_
+```
+
+### Ploting products with highest number of complaints
+```{r,fig.height = 5, fig.width = 10}
+Top_10_product <- complaints_test %>%
+  group_by(Product) %>%
+  summarise(number_of_complaints = n())%>%
+  arrange(desc(number_of_complaints))%>%
+  head(10)%>%
+  select(Product) # This line select the companies with most complaints
+p_2 <- complaints_test %>%
+  filter(Product %in% Top_10_product$Product) %>%
+  group_by(Product,Submitted.via)%>%
+  summarise(number_of_complaints = n())%>%
+  ungroup()%>%
+  mutate(Product = factor(Product, levels=Top_10_product$Product))%>%
+  ggplot(aes(fill=Submitted.via, y=number_of_complaints, x=Product)) + 
+  geom_bar(position="stack", stat="identity")+ylab('Nunber of Complaints by Product')+coord_flip()+theme(legend.position="bottom")
+ggplotly(p_2,width = 1200, height = 500, type = 'bar')
+```
+
+# 7. Mapping the complaints in different states
+
+## The overall complaints number accross U.S.
+```{r,message=F, warning=FALSE}
+census_api_key(Sys.getenv('CENSUS_API_KEY'))
+state_pop <- get_acs(
+  geography = "state",
+  variables = "B01003_001",
+  year = 2018,
+  survey = "acs5"
+  )%>%
+  mutate(fips = fips(NAME))%>%
+  mutate(State = state.abb[match(NAME,state.name)])%>%
+  select(NAME,estimate,fips,State)%>%
+  mutate(state = NAME)%>%
+  mutate(state_population = estimate)%>%
+  select(-NAME,-estimate)
+state_pop <- as.data.frame(state_pop)
+submit_mapping <- function(x){complaints_test %>%
+  group_by(State) %>%
+  filter(Submitted.via == x)%>%
+  summarise(number_of_complaints = n())%>%
+  ungroup()%>%
+  left_join(.,state_pop)%>%
+  mutate(state_adjusted_complaints = number_of_complaints/state_population*100000)%>%
+  as.data.frame(.)%>%
+  filter(!is.na(state))%>%
+  plot_usmap(data = ., values = "state_adjusted_complaints", color = "red")+scale_fill_continuous(
+    low = "white", high = "red", name =  paste("Complaints submitted by",x,sep = ' ') , label = scales::comma) + theme(legend.position = "right")}
+submit_via <- complaints_test%>%select(Submitted.via)%>%distinct(.)
+submit_via <- submit_via$Submitted.via
+lapply(submit_via,submit_mapping)
+```
+
+
+```{r}
+
+```
+
+
+## complaints number accross U.S.
+```{r,message=F}
+company_complaints_mapping <- function(x){
+state_complaint <- complaints_test %>%
+  filter(Company == x) %>%
+  group_by(State) %>%
+  summarise(number_of_complaints = n())%>%
+  ungroup()
+state_complaint <- left_join(state_complaint,state_pop)
+state_complaint <- state_complaint%>%
+  mutate(state_adjusted_complaints = number_of_complaints/state_population*1000000)
+state_complaint <- as.data.frame(state_complaint)%>%
+  filter(!is.na(state))
+plot_usmap(data = state_complaint, values = "state_adjusted_complaints", color = "orange")+scale_fill_continuous(
+    low = "white", high = "orange", name = "Complaints by State (adjusted by population)", label = scales::comma) + theme(legend.position = "right")}
+company_complaints_mapping('BANK OF AMERICA, NATIONAL ASSOCIATION')
+```
+
+# 8. Text mining and word cloud for complaints involving monetary relief or not.
+
+## set up corpus for narrative complaints
+```{r}
+complaints_narrative_corp <- complaints_test %>%
+  select(Company.response.to.consumer,Consumer.complaint.narrative)%>%
+  filter(!is.na(Consumer.complaint.narrative))%>%
+  filter(Consumer.complaint.narrative != '')%>%
+  group_by(Company.response.to.consumer)%>%
+  summarise(narrative = paste0(Consumer.complaint.narrative,collapse = " "))%>%
+  ungroup()%>%
+  unnest_tokens(word, narrative) %>%
+  count(Company.response.to.consumer,word, sort = TRUE)
+```
+
+## data cleaning
+```{r, message=F}
+complaints_narrative_corp <- complaints_narrative_corp %>%
+  filter(word %in% stopwords("english") == FALSE)%>%
+  filter(word %in% c("xxxx", "xxxxxxxx", "xx") == FALSE)%>%
+  mutate(word = tolower(word))%>%
+  filter(str_detect(word, "^[0-9]")==FALSE)%>%
+  filter(str_detect(word,'[[:punct:] ]+')==FALSE)%>%
+  filter(str_detect(word,' ')==FALSE)
+```
+
+## calculate number of words of each issue
+```{r, message=F}
+total_words <- complaints_narrative_corp %>% 
+  group_by(Company.response.to.consumer) %>%
+  summarize(total = sum(n))
+complaints_narrative_corp <- left_join(complaints_narrative_corp, total_words)
+```
+
+```{r}
+complaints_narrative_corp <- complaints_narrative_corp %>%
+  bind_tf_idf(word, Company.response.to.consumer, n)
+```
+
+```{r}
+complaints_narrative_corp <- complaints_narrative_corp %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+str(complaints_narrative_corp)
+```
+
+```{r,fig.height = 10, fig.width = 10}
+p_5 <- complaints_narrative_corp %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(Company.response.to.consumer) %>% 
+  top_n(10) %>% 
+  ungroup() %>%
+  ggplot(aes(word, tf_idf, fill = Company.response.to.consumer)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~Company.response.to.consumer, ncol = 2, scales = "free") +
+  coord_flip()
+ggplotly(p_5,width = 1000, height = 1000, type = 'bar')
+```
+
+
+## word cloud with tf_idf
+```{r,warning=FALSE}
+complaints_narrative_corp <- complaints_narrative_corp %>%
+    filter(Company.response.to.consumer == 'Closed with monetary relief')
+wordcloud(words = complaints_narrative_corp$word, freq = complaints_narrative_corp$tf_idf,
+    max.words=200, random.order=FALSE, rot.per=0.35, 
+    colors=brewer.pal(8, "Dark2"))
+```
+
+## word cloud with frequency of words
+```{r,warning=FALSE}
+wordcloud(words = complaints_narrative_corp$word, freq = complaints_narrative_corp$n,
+    max.words=200, random.order=FALSE, rot.per=0.35, 
+    colors=brewer.pal(8, "Dark2"))
+```
+
+## repeat all of that using bigram
+```{r}
+complaints_narrative_corp_2 <- complaints_test %>%
+  select(Company.response.to.consumer,Consumer.complaint.narrative)%>%
+  filter(!is.na(Consumer.complaint.narrative))%>%
+  filter(Consumer.complaint.narrative != '')%>%
+  group_by(Company.response.to.consumer)%>%
+  summarise(narrative = paste0(Consumer.complaint.narrative,collapse = " "))%>%
+  ungroup()%>%
+  unnest_tokens(word, narrative)%>%
+  filter(word %in% stopwords("english") == FALSE)%>%
+  filter(word %in% c("xxxx", "xxxxxxxx", "xx") == FALSE)%>%
+  mutate(word = tolower(word))%>%
+  filter(str_detect(word, "^[0-9]")==FALSE)%>%
+  filter(str_detect(word,'[[:punct:] ]+')==FALSE)%>%
+  filter(str_detect(word,' ')==FALSE)%>%
+  group_by(Company.response.to.consumer)%>%
+  summarise(narrative = paste0(word,collapse = " "))%>%
+  unnest_tokens(bigrams, narrative, token = "ngrams", n = 2)%>%
+  count(Company.response.to.consumer,bigrams, sort = TRUE)
+```
+
+```{r, message=F}
+total_words_2 <- complaints_narrative_corp_2 %>% 
+  group_by(Company.response.to.consumer) %>%
+  summarize(total = sum(n))
+complaints_narrative_corp_2 <- left_join(complaints_narrative_corp_2, total_words_2)
+```
+
+```{r}
+complaints_narrative_corp_2 <- complaints_narrative_corp_2 %>%
+  bind_tf_idf(bigrams, Company.response.to.consumer, n)
+```
+
+```{r}
+complaints_narrative_corp_2 <- complaints_narrative_corp_2 %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+```
+
+```{r,fig.height = 10, fig.width = 10}
+p_5 <- complaints_narrative_corp_2 %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(bigrams = factor(bigrams, levels = rev(unique(bigrams)))) %>%
+  group_by(Company.response.to.consumer) %>% 
+  top_n(10) %>% 
+  ungroup() %>%
+  ggplot(aes(bigrams, tf_idf, fill = Company.response.to.consumer)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~Company.response.to.consumer, ncol = 2, scales = "free") +
+  coord_flip()
+ggplotly(p_5,width = 1000, height = 1000, type = 'bar')
+```
+
+## word cloud with tf_idf
+```{r,warning=FALSE}
+complaints_narrative_corp_2 <- complaints_narrative_corp_2 %>%
+    filter(Company.response.to.consumer == 'Closed with monetary relief')
+wordcloud(words = complaints_narrative_corp_2$bigrams, freq = complaints_narrative_corp_2$tf_idf,
+    max.words=200, random.order=FALSE, rot.per=0.35, 
+    colors=brewer.pal(8, "Dark2"))
+```
+
+## word cloud with frequency of words
+```{r,warning=FALSE}
+wordcloud(words = complaints_narrative_corp_2$bigrams, freq = complaints_narrative_corp_2$n,
+    max.words=200, random.order=FALSE, rot.per=0.35, 
+    colors=brewer.pal(8, "Dark2"))
+```
