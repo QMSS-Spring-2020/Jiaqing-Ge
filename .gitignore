@@ -39,3 +39,4 @@ vignettes/*.pdf
 .Renviron
 Deliverable_1/Practicum-homework1.md
 Deliverable_1/Practicum-homework1.md
+*.csv
