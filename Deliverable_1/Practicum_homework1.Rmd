@@ -318,11 +318,11 @@ complaints_narrative_corp <- complaints_narrative_corp %>%
 complaints_narrative_corp <- complaints_narrative_corp %>%
   select(-total) %>%
   arrange(desc(tf_idf))
-str(complaints_narrative_corp)
+saveRDS(complaints_narrative_corp, file = "complaints_narrative_corp.rds")
 ```
 
 ```{r,fig.height = 10, fig.width = 10}
-p_5 <- complaints_narrative_corp %>%
+top_word_response <- complaints_narrative_corp %>%
   arrange(desc(tf_idf)) %>%
   mutate(word = factor(word, levels = rev(unique(word)))) %>% 
   group_by(Company.response.to.consumer) %>% 
@@ -333,7 +333,7 @@ p_5 <- complaints_narrative_corp %>%
   labs(x = NULL, y = "tf-idf") +
   facet_wrap(~Company.response.to.consumer, ncol = 2, scales = "free") +
   coord_flip()
-ggplotly(p_5,width = 1000, height = 1000, type = 'bar')
+ggplotly(top_word_response,width = 1000, height = 1000, type = 'bar')
 ```
 
 
@@ -423,3 +423,19 @@ wordcloud(words = complaints_narrative_corp_2$bigrams, freq = complaints_narrati
     max.words=200, random.order=FALSE, rot.per=0.35, 
     colors=brewer.pal(8, "Dark2"))
 ```
+
+
+```{r}
+library( geojsonio )
+
+# transfrom .json file into a spatial polygons data frame
+states <- 
+    geojson_read( 
+        x = "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json"
+        , what = "sp"
+    )
+
+# check the class of the object
+class( states )
+```
+
